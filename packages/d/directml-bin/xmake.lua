@@ -16,7 +16,7 @@ package("directml-bin")
 
         local url = opt.url
         local sourcedir = opt.sourcedir
-        local packagefile = path.filename(url)
+        local packagefile = package:name() .. ".zip"
         local sourcehash = package:sourcehash(opt.url_alias)
 
         local cached = true
@@ -36,7 +36,9 @@ package("directml-bin")
         -- extract package file
         local sourcedir_tmp = sourcedir .. ".tmp"
         os.rm(sourcedir_tmp)
-        archive.extract(packagefile, sourcedir_tmp)
+        if not archive.extract(packagefile, sourcedir_tmp) then
+            raise("failed to extract package file: %s", packagefile)
+        end
         os.mv(sourcedir_tmp, sourcedir)
         os.rm(sourcedir_tmp)
 
