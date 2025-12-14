@@ -8,7 +8,7 @@ package("directml-bin")
 
     set_urls("https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/$(version)", {alias = "nupkg"})
 
-    add_versions("1.15.4", "4E7CB7DDCE8CF837A7A75DC029209B520CA0101470FCDF275C1F49736A3615B9")
+    add_versions("1.15.4", "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9")
 
     if is_plat("windows") then
         on_install(function (package)
