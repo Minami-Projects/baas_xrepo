@@ -60,7 +60,7 @@ package("directml-bin")
         end
 
         -- install to include/
-        os.cp("source/include", package:installdir("include"))
+        os.cp("include", package:installdir("include"))
 
         local bin_source = path.join("bin", nuget_arch)
 
