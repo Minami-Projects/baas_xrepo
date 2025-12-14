@@ -39,6 +39,7 @@ package("directml-bin")
         if not archive.extract(packagefile, sourcedir_tmp) then
             raise("failed to extract package file: %s", packagefile)
         end
+        os.rm(sourcedir)
         os.mv(sourcedir_tmp, sourcedir)
         os.rm(sourcedir_tmp)
 
