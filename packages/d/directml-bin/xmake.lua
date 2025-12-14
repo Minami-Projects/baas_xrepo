@@ -10,40 +10,73 @@ package("directml-bin")
 
     add_versions("1.15.4", "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9")
 
-    if is_plat("windows") then
-        on_install(function (package)
-            local arch_map = {
-                ["x64"] = "x64-win",
-                ["x86"] = "x86-win",
-                ["arm64"] = "arm64-win"
-            }
+    on_download(function (package, opt)
+        import("net.http")
+        import("utils.archive")
 
-            local nuget_arch = arch_map[package:arch()]
-            if not nuget_arch then
-                raise("Unsupported architecture: " .. package:arch())
+        local url = opt.url
+        local sourcedir = opt.sourcedir
+        local packagefile = path.filename(url)
+        local sourcehash = package:sourcehash(opt.url_alias)
+
+        local cached = true
+        if not os.isfile(packagefile) or sourcehash ~= hash.sha256(packagefile) then
+            cached = false
+
+            -- attempt to remove package file first
+            os.tryrm(packagefile)
+            http.download(url, packagefile)
+
+            -- check hash
+            if sourcehash and sourcehash ~= hash.sha256(packagefile) then
+                raise("unmatched checksum, current hash(%s) != original hash(%s)", hash.sha256(packagefile):sub(1, 8), sourcehash:sub(1, 8))
             end
+        end
 
-            -- install to include/
-            os.cp("include", package:installdir())
+        -- extract package file
+        local sourcedir_tmp = sourcedir .. ".tmp"
+        os.rm(sourcedir_tmp)
+        archive.extract(packagefile, sourcedir_tmp)
+        os.mv(sourcedir_tmp, sourcedir)
+        os.rm(sourcedir_tmp)
+        end
 
-            -- install binaries
-            local bin_source = path.join("bin", nuget_arch)
+        -- save original file path
+        package:originfile_set(path.absolute(packagefile))
+    end)
 
-            -- install library
-            os.cp(path.join(bin_source, "*.lib"), package:installdir("lib"))
+    on_install(function (package)
+        import("utils.archive")
+        local arch_map = {
+            ["x64"] = "x64-win",
+            ["x86"] = "x86-win",
+            ["arm64"] = "arm64-win"
+        }
 
-            -- copy dlls and pdbs to bin/
-            os.cp(path.join(bin_source, "*.dll"), package:installdir("bin"))
-            os.cp(path.join(bin_source, "*.pdb"), package:installdir("bin"))
+        local nuget_arch = arch_map[package:arch()]
+        if not nuget_arch then
+            raise("Unsupported architecture: " .. package:arch())
+        end
+
+        -- install to include/
+        os.cp("source/include", package:installdir("include"))
+
+        local bin_source = path.join("bin", nuget_arch)
+
+        -- install library
+        os.cp(path.join(bin_source, "*.lib"), package:installdir("lib"))
+
+        -- copy dlls and pdbs to bin/
+        os.cp(path.join(bin_source, "*.dll"), package:installdir("bin"))
+        os.cp(path.join(bin_source, "*.pdb"), package:installdir("bin"))
 
 
-            -- install copyright
-            os.cp("LICENSE.txt", package:installdir("share/directml-bin/copyright"))
+        -- install copyright
+        os.cp("LICENSE.txt", package:installdir("share/directml-bin/copyright"))
 
-            -- add links config
-            package:add("links", "DirectML")
-        end)
-    end
+        -- add links config
+        package:add("links", "DirectML")
+    end)
 
     on_test(function (package)
         assert(package:has_cfuncs("DMLCreateDevice", {includes = "DirectML.h"}))
