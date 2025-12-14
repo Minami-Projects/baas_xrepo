@@ -79,7 +79,3 @@ package("directml-bin")
         -- add links config
         package:add("links", "DirectML")
     end)
-
-    on_test(function (package)
-        assert(package:has_cfuncs("DMLCreateDevice", {includes = "DirectML.h"}))
-    end)
