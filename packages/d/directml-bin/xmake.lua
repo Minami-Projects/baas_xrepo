@@ -39,7 +39,6 @@ package("directml-bin")
         archive.extract(packagefile, sourcedir_tmp)
         os.mv(sourcedir_tmp, sourcedir)
         os.rm(sourcedir_tmp)
-        end
 
         -- save original file path
         package:originfile_set(path.absolute(packagefile))
