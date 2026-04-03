@@ -1,0 +1,140 @@
+name: release-prebuilt-packages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release-prebuilt-packages.yml"
+      - "packages/**"
+      - "scripts/ci/**"
+      - "README.md"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Optional explicit release tag
+        required: false
+        type: string
+      release_title:
+        description: Optional explicit release title
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build-${{ matrix.platform }}-${{ matrix.mode }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            platform: windows
+            arch: x64
+            mode: debug
+          - runner: windows-latest
+            platform: windows
+            arch: x64
+            mode: release
+          - runner: ubuntu-latest
+            platform: linux
+            arch: x64
+            mode: debug
+          - runner: ubuntu-latest
+            platform: linux
+            arch: x64
+            mode: release
+          - runner: macos-latest
+            platform: macos
+            arch: x64
+            mode: debug
+          - runner: macos-latest
+            platform: macos
+            arch: x64
+            mode: release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Set up xmake
+        uses: xmake-io/github-action-setup-xmake@v2
+        with:
+          xmake-version: latest
+
+      - name: Build package archives
+        run: >
+          python scripts/ci/build_prebuilt_packages.py
+          --platform ${{ matrix.platform }}
+          --arch ${{ matrix.arch }}
+          --mode ${{ matrix.mode }}
+          --output-dir artifacts
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  release:
+    name: publish-release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          pattern: prebuilt-*
+          merge-multiple: true
+
+      - name: Compute release metadata
+        id: meta
+        run: |
+          timestamp="$(date -u +%Y%m%d-%H%M%S)"
+          short_sha="${GITHUB_SHA::7}"
+          tag="${{ inputs.release_tag }}"
+          title="${{ inputs.release_title }}"
+          if [ -z "$tag" ]; then
+            tag="prebuilt-${timestamp}-${short_sha}"
+          fi
+          if [ -z "$title" ]; then
+            title="BAAS xrepo prebuilt packages ${timestamp} (${short_sha})"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        run: >
+          python scripts/ci/generate_release_notes.py
+          --artifacts-dir release-artifacts
+          --output release-notes.md
+          --index-output release-artifacts/release-index.json
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t assets < <(find release-artifacts -maxdepth 2 -type f ! -name '*.md' | sort)
+          gh release create "${{ steps.meta.outputs.tag }}" "${assets[@]}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${{ steps.meta.outputs.title }}" \
+            --notes-file release-notes.md
