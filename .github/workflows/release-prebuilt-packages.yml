@@ -60,23 +60,187 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
       - name: Set up xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: latest
 
       - name: Build package archives
-        run: >
-          python scripts/ci/build_prebuilt_packages.py
-          --platform ${{ matrix.platform }}
-          --arch ${{ matrix.arch }}
-          --mode ${{ matrix.mode }}
-          --output-dir artifacts
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+
+          $repoRoot = (Get-Location).Path
+          $outputDir = Join-Path $repoRoot 'artifacts'
+          $manifestsDir = Join-Path $outputDir 'manifests'
+          New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $manifestsDir -Force | Out-Null
+
+          function Invoke-LoggedCommand {
+            param([string[]]$Command, [switch]$Capture)
+            Write-Host ('+ ' + ($Command -join ' '))
+            $exe = $Command[0]
+            $args = @()
+            if ($Command.Count -gt 1) {
+              $args = $Command[1..($Command.Count - 1)]
+            }
+            if ($Capture) {
+              $output = & $exe @args
+            } else {
+              & $exe @args
+              $output = @()
+            }
+            if ($LASTEXITCODE -ne 0) {
+              throw "Command failed with exit code ${LASTEXITCODE}: $($Command -join ' ')"
+            }
+            if ($Capture) {
+              return ($output -join "`n")
+            }
+          }
+
+          function Get-ConfigString {
+            param([System.Collections.Specialized.OrderedDictionary]$Configs)
+            return (($Configs.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ',')
+          }
+
+          function Get-PackageMatrix {
+            param([string]$PlatformName)
+            $packages = @(
+              [pscustomobject]@{ Name = 'pybind11-fix'; Variant = 'default'; Configs = [ordered]@{ source = 'y' } },
+              [pscustomobject]@{ Name = 'opencv-fix'; Variant = 'default'; Configs = [ordered]@{ source = 'y' } }
+            )
+            if ($PlatformName -eq 'windows') {
+              $packages += [pscustomobject]@{ Name = 'directml-bin'; Variant = 'default'; Configs = [ordered]@{ source = 'y' } }
+            }
+            $packages += [pscustomobject]@{
+              Name = 'baas-onnxruntime'
+              Variant = $(if ($PlatformName -eq 'windows') { 'directml' } else { 'cpu' })
+              Configs = [ordered]@{
+                source = 'y'
+                cuda = 'n'
+                tensorrt = 'n'
+                directml = $(if ($PlatformName -eq 'windows') { 'y' } else { 'n' })
+              }
+            }
+            return $packages
+          }
+
+          function Resolve-InfoPayload {
+            param([string]$RawJson)
+            $payload = $RawJson | ConvertFrom-Json
+            if ($payload -is [System.Array]) {
+              if ($payload.Count -ne 1) {
+                throw "Expected exactly one package info payload, got $($payload.Count)"
+              }
+              return $payload[0]
+            }
+            return $payload
+          }
+
+          function Get-ManifestBaseName {
+            param([string]$AssetName)
+            if ($AssetName.EndsWith('.tar.gz')) {
+              return $AssetName.Substring(0, $AssetName.Length - 7)
+            }
+            return [System.IO.Path]::GetFileNameWithoutExtension($AssetName)
+          }
+
+          function New-InstallArchive {
+            param([string]$InstallDir, [string]$ArchivePath, [string]$PlatformName)
+            if (Test-Path -LiteralPath $ArchivePath) {
+              Remove-Item -LiteralPath $ArchivePath -Force
+            }
+            if ($PlatformName -eq 'windows') {
+              $items = @(Get-ChildItem -LiteralPath $InstallDir -Force | ForEach-Object { $_.FullName })
+              if ($items.Count -eq 0) {
+                throw "Install directory is empty: $InstallDir"
+              }
+              Compress-Archive -Path $items -DestinationPath $ArchivePath -Force
+              return
+            }
+            & tar -czf $ArchivePath -C $InstallDir .
+            if ($LASTEXITCODE -ne 0) {
+              throw "tar failed with exit code ${LASTEXITCODE}: $ArchivePath"
+            }
+          }
+
+          $platform = '${{ matrix.platform }}'
+          $arch = '${{ matrix.arch }}'
+          $mode = '${{ matrix.mode }}'
+          $extension = if ($platform -eq 'windows') { 'zip' } else { 'tar.gz' }
+          $runId = if ($env:GITHUB_RUN_ID) { $env:GITHUB_RUN_ID } else { "local-$PID" }
+          $repoName = "baas-xrepo-ci-$runId-$platform-$mode"
+          $builtAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $commit = if ($env:GITHUB_SHA) { $env:GITHUB_SHA } else { 'local' }
+          $results = New-Object System.Collections.Generic.List[object]
+
+          try {
+            try {
+              Invoke-LoggedCommand @('xrepo', 'rm-repo', '-y', $repoName) | Out-Null
+            } catch {
+            }
+
+            Invoke-LoggedCommand @('xrepo', 'add-repo', $repoName, $repoRoot)
+
+            foreach ($package in (Get-PackageMatrix -PlatformName $platform)) {
+              $packageName = [string]$package.Name
+              $variant = [string]$package.Variant
+              $configs = [System.Collections.Specialized.OrderedDictionary]$package.Configs
+              $configString = Get-ConfigString -Configs $configs
+              $repoPackage = "$repoName::$packageName"
+
+              Invoke-LoggedCommand @('xrepo', 'install', '-y', '-a', $arch, '-m', $mode, '-f', $configString, $repoPackage)
+              $infoJson = Invoke-LoggedCommand -Capture @('xrepo', 'info', '--json', '-a', $arch, '-m', $mode, '-f', $configString, $repoPackage)
+              $info = Resolve-InfoPayload -RawJson $infoJson
+
+              $installDir = [System.IO.Path]::GetFullPath([string]$info.installdir)
+              $version = ([string]$info.version).TrimStart('v')
+              if ([string]::IsNullOrWhiteSpace($version)) {
+                $version = 'unknown'
+              }
+
+              $assetName = "$packageName-$version-$platform-$arch-$mode"
+              if ($packageName -eq 'baas-onnxruntime') {
+                $assetName += "-$variant"
+              }
+              $assetName += ".$extension"
+
+              $archivePath = Join-Path $outputDir $assetName
+              New-InstallArchive -InstallDir $installDir -ArchivePath $archivePath -PlatformName $platform
+
+              $archiveItem = Get-Item -LiteralPath $archivePath
+              $manifest = [ordered]@{
+                package = $packageName
+                version = $version
+                platform = $platform
+                arch = $arch
+                mode = $mode
+                variant = $variant
+                asset_name = $archiveItem.Name
+                sha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+                size_bytes = $archiveItem.Length
+                built_at_utc = $builtAt
+                source_commit = $commit
+                repo_name = $repoName
+                configs = $configs
+                installdir = $installDir
+              }
+
+              $manifestPath = Join-Path $manifestsDir ("{0}.json" -f (Get-ManifestBaseName -AssetName $archiveItem.Name))
+              Set-Content -LiteralPath $manifestPath -Value (($manifest | ConvertTo-Json -Depth 10) + "`n") -Encoding utf8
+              $results.Add([pscustomobject]$manifest) | Out-Null
+            }
+
+            $summaryPath = Join-Path $outputDir "build-results-$platform-$arch-$mode.json"
+            Set-Content -LiteralPath $summaryPath -Value (($results | ConvertTo-Json -Depth 10) + "`n") -Encoding utf8
+          }
+          finally {
+            try {
+              Invoke-LoggedCommand @('xrepo', 'rm-repo', '-y', $repoName) | Out-Null
+            } catch {
+            }
+          }
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

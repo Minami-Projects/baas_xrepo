@@ -1,64 +1,6 @@
 -- copied from https://github.com/xmake-io/xmake-repo/blob/886bb0c11433a8cfd7cde408c6dbe8d9b6f1e318/packages/p/pybind11/xmake.lua
 -- gives options to use system python installation
 -- and use python executable instead of python3
-
-local function _baas_release_base(package)
-    local tag = package:config("prebuilt_tag") or "latest"
-    if tag == "latest" then
-        return "https://github.com/Nanboom233/baas_xrepo/releases/latest/download"
-    end
-    return "https://github.com/Nanboom233/baas_xrepo/releases/download/" .. tag
-end
-
-local function _baas_try_install_prebuilt(package)
-    if package:config("source") then
-        return false
-    end
-
-    local plat
-    if package:is_plat("windows") then
-        plat = "windows"
-    elseif package:is_plat("linux") then
-        plat = "linux"
-    elseif package:is_plat("macosx") then
-        plat = "macos"
-    else
-        return false
-    end
-
-    local arch = package:is_arch("x86_64", "x64") and "x64" or package:arch()
-    local mode = package:debug() and "debug" or "release"
-    local version = tostring(package:version()):gsub("^v", "")
-    local ext = package:is_plat("windows") and "zip" or "tar.gz"
-    local asset_name = string.format("%s-%s-%s-%s-%s.%s", package:name(), version, plat, arch, mode, ext)
-    local asset_path = path.absolute(asset_name)
-    local extract_dir = path.join(os.tmpdir(), package:name() .. "-" .. plat .. "-" .. mode)
-    local url = _baas_release_base(package) .. "/" .. asset_name
-
-    import("net.http")
-    import("utils.archive")
-
-    local ok = try {
-        function ()
-            os.tryrm(asset_path)
-            http.download(url, asset_path)
-        end
-    }
-
-    if not ok then
-        cprint("${yellow}[baas-xrepo] prebuilt asset unavailable, fallback to source build: %s", url)
-        return false
-    end
-
-    os.rm(extract_dir)
-    if not archive.extract(asset_path, extract_dir) then
-        raise("failed to extract prebuilt package archive: %s", asset_path)
-    end
-
-    os.cp(path.join(extract_dir, "*"), package:installdir())
-    return true
-end
-
 package("pybind11-fix")
     set_kind("library", {headeronly = true})
     set_homepage("https://github.com/pybind/pybind11")
@@ -84,8 +26,6 @@ package("pybind11-fix")
 
     add_deps("cmake")
 
-    add_configs("source", {description = "Build from source even if a GitHub release asset exists.", default = false, type = "boolean"})
-    add_configs("prebuilt_tag", {description = "GitHub release tag that stores prebuilt assets. Use latest to track the newest release.", default = "latest", type = "string"})
     add_configs("python_executable_path",{description = "Python executable path (if specific-python is on)", type = "string"})
     add_configs("python_root_path",{description = "Python root path (if specific-python is on)", type = "string"})
     add_configs("python_include_path",{description = "Python include path (if specific-python is on)", type = "string"})
@@ -97,10 +37,6 @@ package("pybind11-fix")
     end)
 
     on_install(function (package)
-        if _baas_try_install_prebuilt(package) then
-            return
-        end
-
         local configs = {"-DPYBIND11_TEST=OFF"}
 
         -- override xmake injection of ndebug configs

@@ -1,62 +1,4 @@
 -- fix of opencv xmake package to accept debug option
-
-local function _baas_release_base(package)
-    local tag = package:config("prebuilt_tag") or "latest"
-    if tag == "latest" then
-        return "https://github.com/Nanboom233/baas_xrepo/releases/latest/download"
-    end
-    return "https://github.com/Nanboom233/baas_xrepo/releases/download/" .. tag
-end
-
-local function _baas_try_install_prebuilt(package)
-    if package:config("source") or package:config("cuda") then
-        return false
-    end
-
-    local plat
-    if package:is_plat("windows") then
-        plat = "windows"
-    elseif package:is_plat("linux") then
-        plat = "linux"
-    elseif package:is_plat("macosx") then
-        plat = "macos"
-    else
-        return false
-    end
-
-    local arch = package:is_arch("x86_64", "x64") and "x64" or package:arch()
-    local mode = package:debug() and "debug" or "release"
-    local version = tostring(package:version()):gsub("^v", "")
-    local ext = package:is_plat("windows") and "zip" or "tar.gz"
-    local asset_name = string.format("%s-%s-%s-%s-%s.%s", package:name(), version, plat, arch, mode, ext)
-    local asset_path = path.absolute(asset_name)
-    local extract_dir = path.join(os.tmpdir(), package:name() .. "-" .. plat .. "-" .. mode)
-    local url = _baas_release_base(package) .. "/" .. asset_name
-
-    import("net.http")
-    import("utils.archive")
-
-    local ok = try {
-        function ()
-            os.tryrm(asset_path)
-            http.download(url, asset_path)
-        end
-    }
-
-    if not ok then
-        cprint("${yellow}[baas-xrepo] prebuilt asset unavailable, fallback to source build: %s", url)
-        return false
-    end
-
-    os.rm(extract_dir)
-    if not archive.extract(asset_path, extract_dir) then
-        raise("failed to extract prebuilt package archive: %s", asset_path)
-    end
-
-    os.cp(path.join(extract_dir, "*"), package:installdir())
-    return true
-end
-
 package("opencv-fix")
     set_homepage("https://opencv.org/")
     set_description("A open source computer vision library.")
@@ -95,8 +37,6 @@ package("opencv-fix")
     add_resources("4.2.0", "opencv_contrib", "https://github.com/opencv/opencv_contrib/archive/4.2.0.tar.gz", "8a6b5661611d89baa59a26eb7ccf4abb3e55d73f99bb52d8f7c32265c8a43020")
     add_resources("3.4.9", "opencv_contrib", "https://github.com/opencv/opencv_contrib/archive/3.4.9.tar.gz", "dc7d95be6aaccd72490243efcec31e2c7d3f21125f88286186862cf9edb14a57")
 
-    add_configs("source", {description = "Build from source even if a GitHub release asset exists.", default = false, type = "boolean"})
-    add_configs("prebuilt_tag", {description = "GitHub release tag that stores prebuilt assets. Use latest to track the newest release.", default = "latest", type = "string"})
     add_configs("bundled", {description = "Build 3rd-party libraries with OpenCV.", default = true, type = "boolean"})
     add_configs("tesseract", {description = "Enable tesseract on text module", default = false, type = "boolean"})
 
