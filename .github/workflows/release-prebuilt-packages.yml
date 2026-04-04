@@ -74,7 +74,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: artifacts
-          key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ github.sha }}
+          key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ hashFiles('packages/**') }}
 
       - name: Build package archives
         shell: pwsh
@@ -364,7 +364,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: artifacts
-          key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ github.sha }}
+          key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ hashFiles('packages/**') }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
