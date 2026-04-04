@@ -71,12 +71,10 @@ jobs:
           xmake-version: latest
 
       - name: Restore build cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: artifacts
           key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ github.sha }}
-          restore-keys: |
-            xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ github.sha }}
 
       - name: Build package archives
         shell: pwsh
@@ -360,6 +358,13 @@ jobs:
             } catch {
             }
           }
+
+      - name: Save build cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: artifacts
+          key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ github.sha }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

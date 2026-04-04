@@ -55,35 +55,15 @@ package("baas-onnxruntime")
         table.insert(configs, "-DCMAKE_C_RESPONSE_FILE_LINK_FLAG=@")
         table.insert(configs, "-DCMAKE_CXX_RESPONSE_FILE_LINK_FLAG=@")
         if os.host() == "windows" then
-            -- diagnostic: show what xmake set as cwd and what's inside
             local srcdir = os.curdir()
-            print("[subst-diag] os.curdir() = " .. srcdir)
-            print("[subst-diag] package:cachedir() = " .. package:cachedir())
-            local entries = os.filedirs(path.join(srcdir, "*"))
-            print("[subst-diag] contents of curdir (" .. #entries .. " entries):")
-            for _, e in ipairs(entries) do
-                print("  " .. (os.isdir(e) and "[DIR] " or "[FILE] ") .. path.filename(e))
-            end
-            -- check if cmake/ is directly here or one level deeper
-            if not os.isdir(path.join(srcdir, "cmake")) then
-                -- xmake may not have stripped the top-level dir; look one level deeper
-                local subdirs = os.dirs(path.join(srcdir, "*"))
-                for _, d in ipairs(subdirs) do
-                    if os.isdir(path.join(d, "cmake")) then
-                        print("[subst-diag] found cmake/ inside " .. path.filename(d) .. ", cd-ing into it")
-                        os.cd(d)
-                        srcdir = os.curdir()
-                        break
-                    end
-                end
-            end
-            assert(os.isdir(path.join(srcdir, "cmake")), "[subst] cmake/ not found in " .. srcdir)
-            -- subst requires native backslash paths
-            local subst_path = srcdir:gsub("/", "\\")
+            -- must leave B: before deleting the mapping, otherwise subst /D fails
+            -- because the current process holds a reference to the drive
+            os.cd(os.tmpdir())
             try { function () os.exec("subst B: /D") end }
-            os.exec("subst B: " .. subst_path)
+            -- map B: to the source root and cd into it
+            os.cd(srcdir)
+            os.exec("subst B: " .. srcdir)
             os.cd("B:/")
-            print("[subst-diag] subst active, cwd = " .. os.curdir())
         end
 
         table.insert(configs, "-Donnxruntime_BUILD_SHARED_LIB=" .. (package:config("onnx_shared") and "ON" or "OFF"))
@@ -147,6 +127,7 @@ package("baas-onnxruntime")
         os.rm(package:installdir("include/onnxruntime"))
 
         if os.host() == "windows" then
+            os.cd(os.tmpdir())
             try {
                  function ()
                     os.exec("subst B: /D")
