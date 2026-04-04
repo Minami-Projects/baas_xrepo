@@ -70,6 +70,38 @@ jobs:
         with:
           xmake-version: latest
 
+      - name: Set up CUDA toolkit
+        if: matrix.platform == 'windows' || matrix.platform == 'linux'
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: "12.8.0"
+          method: network
+          use-github-cache: true
+
+      - name: Set up TensorRT (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libnvinfer-dev libnvinfer-plugin-dev libnvonnxparsers-dev
+          echo "TENSORRT_ROOT=/usr" >> "$GITHUB_ENV"
+
+      - name: Set up TensorRT (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $trtVersion = "10.9.0.34"
+          $cudaTag = "cuda-12.8"
+          $zipName = "TensorRT-$trtVersion.Windows.win10.$cudaTag.zip"
+          $url = "https://developer.download.nvidia.com/compute/machine-learning/tensorrt/$trtVersion/$zipName"
+          Write-Host "Downloading TensorRT $trtVersion..."
+          Invoke-WebRequest -Uri $url -OutFile $zipName
+          Expand-Archive -Path $zipName -DestinationPath C:\TensorRT
+          $trtRoot = (Get-ChildItem C:\TensorRT -Directory | Select-Object -First 1).FullName
+          Write-Host "TensorRT root: $trtRoot"
+          echo "TENSORRT_ROOT=$trtRoot" >> $env:GITHUB_ENV
+
       - name: Restore build cache
         uses: actions/cache/restore@v5
         with:
@@ -142,14 +174,36 @@ jobs:
             )
             if ($PlatformName -eq 'windows') {
               $packages += [pscustomobject]@{ Name = 'directml-bin'; Variant = 'default'; Configs = [ordered]@{} }
-            }
-            $packages += [pscustomobject]@{
-              Name = 'baas-onnxruntime'
-              Variant = $(if ($PlatformName -eq 'windows') { 'directml' } else { 'cpu' })
-              Configs = [ordered]@{
-                cuda = $false
-                tensorrt = $false
-                directml = $(if ($PlatformName -eq 'windows') { $true } else { $false })
+              # Windows: directml, cuda, tensorrt
+              $packages += [pscustomobject]@{
+                Name = 'baas-onnxruntime'; Variant = 'directml'
+                Configs = [ordered]@{ cuda = $false; tensorrt = $false; directml = $true }
+              }
+              $packages += [pscustomobject]@{
+                Name = 'baas-onnxruntime'; Variant = 'cuda'
+                Configs = [ordered]@{ cuda = $true; tensorrt = $false; directml = $false }
+              }
+              $trtRoot = if ($env:TENSORRT_ROOT) { $env:TENSORRT_ROOT } else { '' }
+              $packages += [pscustomobject]@{
+                Name = 'baas-onnxruntime'; Variant = 'tensorrt'
+                Configs = [ordered]@{ cuda = $true; tensorrt = $true; directml = $false; tensorrt_root = $trtRoot }
+              }
+            } elseif ($PlatformName -eq 'linux') {
+              # Linux: cuda, tensorrt
+              $packages += [pscustomobject]@{
+                Name = 'baas-onnxruntime'; Variant = 'cuda'
+                Configs = [ordered]@{ cuda = $true; tensorrt = $false; directml = $false }
+              }
+              $trtRoot = if ($env:TENSORRT_ROOT) { $env:TENSORRT_ROOT } else { '/usr' }
+              $packages += [pscustomobject]@{
+                Name = 'baas-onnxruntime'; Variant = 'tensorrt'
+                Configs = [ordered]@{ cuda = $true; tensorrt = $true; directml = $false; tensorrt_root = $trtRoot }
+              }
+            } elseif ($PlatformName -eq 'macos') {
+              # TODO: add coreml variant when CoreML EP build is validated
+              $packages += [pscustomobject]@{
+                Name = 'baas-onnxruntime'; Variant = 'cpu'
+                Configs = [ordered]@{ cuda = $false; tensorrt = $false; directml = $false }
               }
             }
             return $packages
