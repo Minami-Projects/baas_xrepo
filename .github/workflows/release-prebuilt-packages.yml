@@ -28,7 +28,7 @@ jobs:
     name: build-${{ matrix.platform }}-${{ matrix.mode }}
     runs-on: ${{ matrix.runner }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - runner: windows-latest
@@ -41,32 +41,47 @@ jobs:
             mode: release
           - runner: ubuntu-latest
             platform: linux
-            arch: x64
+            arch: x86_64
             mode: debug
           - runner: ubuntu-latest
             platform: linux
-            arch: x64
+            arch: x86_64
             mode: release
           - runner: macos-latest
             platform: macos
-            arch: x64
+            arch: arm64
             mode: debug
           - runner: macos-latest
             platform: macos
-            arch: x64
+            arch: arm64
             mode: release
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
       - name: Set up xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: latest
 
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: artifacts
+          key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ github.sha }}
+          restore-keys: |
+            xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ github.sha }}
+
       - name: Build package archives
         shell: pwsh
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: "2"
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -74,8 +89,10 @@ jobs:
           $repoRoot = (Get-Location).Path
           $outputDir = Join-Path $repoRoot 'artifacts'
           $manifestsDir = Join-Path $outputDir 'manifests'
+          $failedLogsDir = Join-Path $repoRoot 'failed-logs'
           New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
           New-Item -ItemType Directory -Path $manifestsDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $failedLogsDir -Force | Out-Null
 
           function Invoke-LoggedCommand {
             param([string[]]$Command, [switch]$Capture)
@@ -101,41 +118,43 @@ jobs:
 
           function Get-ConfigString {
             param([System.Collections.Specialized.OrderedDictionary]$Configs)
-            return (($Configs.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ',')
+            return (($Configs.GetEnumerator() | ForEach-Object {
+              $value = $_.Value
+              if ($value -is [bool]) {
+                "$($_.Key)=" + $(if ($value) { 'true' } else { 'false' })
+              } else {
+                "$($_.Key)='$([string]$value -replace '\\', '/' -replace '''', '\''')'"
+              }
+            }) -join ',')
+          }
+
+          function Get-XmakePlatform {
+            param([string]$PlatformName)
+            switch ($PlatformName) {
+              'macos' { return 'macosx' }
+              default { return $PlatformName }
+            }
           }
 
           function Get-PackageMatrix {
             param([string]$PlatformName)
             $packages = @(
-              [pscustomobject]@{ Name = 'pybind11-fix'; Variant = 'default'; Configs = [ordered]@{ source = 'y' } },
-              [pscustomobject]@{ Name = 'opencv-fix'; Variant = 'default'; Configs = [ordered]@{ source = 'y' } }
+              [pscustomobject]@{ Name = 'pybind11-fix'; Variant = 'default'; Configs = [ordered]@{} },
+              [pscustomobject]@{ Name = 'opencv-fix'; Variant = 'default'; Configs = [ordered]@{} }
             )
             if ($PlatformName -eq 'windows') {
-              $packages += [pscustomobject]@{ Name = 'directml-bin'; Variant = 'default'; Configs = [ordered]@{ source = 'y' } }
+              $packages += [pscustomobject]@{ Name = 'directml-bin'; Variant = 'default'; Configs = [ordered]@{} }
             }
             $packages += [pscustomobject]@{
               Name = 'baas-onnxruntime'
               Variant = $(if ($PlatformName -eq 'windows') { 'directml' } else { 'cpu' })
               Configs = [ordered]@{
-                source = 'y'
-                cuda = 'n'
-                tensorrt = 'n'
-                directml = $(if ($PlatformName -eq 'windows') { 'y' } else { 'n' })
+                cuda = $false
+                tensorrt = $false
+                directml = $(if ($PlatformName -eq 'windows') { $true } else { $false })
               }
             }
             return $packages
-          }
-
-          function Resolve-InfoPayload {
-            param([string]$RawJson)
-            $payload = $RawJson | ConvertFrom-Json
-            if ($payload -is [System.Array]) {
-              if ($payload.Count -ne 1) {
-                throw "Expected exactly one package info payload, got $($payload.Count)"
-              }
-              return $payload[0]
-            }
-            return $payload
           }
 
           function Get-ManifestBaseName {
@@ -144,6 +163,29 @@ jobs:
               return $AssetName.Substring(0, $AssetName.Length - 7)
             }
             return [System.IO.Path]::GetFileNameWithoutExtension($AssetName)
+          }
+
+          function Resolve-ExportedInstall {
+            param([string]$ExportRoot, [string]$PackageName)
+            $packageRoot = Join-Path (Join-Path $ExportRoot $PackageName.Substring(0, 1).ToLowerInvariant()) $PackageName
+            if (-not (Test-Path -LiteralPath $packageRoot)) {
+              throw "Exported package root not found: $packageRoot"
+            }
+
+            $versionDirs = @(Get-ChildItem -LiteralPath $packageRoot -Directory)
+            if ($versionDirs.Count -ne 1) {
+              throw "Expected exactly one version directory under $packageRoot, got $($versionDirs.Count)"
+            }
+
+            $instanceDirs = @(Get-ChildItem -LiteralPath $versionDirs[0].FullName -Directory)
+            if ($instanceDirs.Count -ne 1) {
+              throw "Expected exactly one exported instance directory under $($versionDirs[0].FullName), got $($instanceDirs.Count)"
+            }
+
+            return [pscustomobject]@{
+              Version = $versionDirs[0].Name.TrimStart('v')
+              InstallDir = $instanceDirs[0].FullName
+            }
           }
 
           function New-InstallArchive {
@@ -168,12 +210,18 @@ jobs:
           $platform = '${{ matrix.platform }}'
           $arch = '${{ matrix.arch }}'
           $mode = '${{ matrix.mode }}'
+          $xmakePlatform = Get-XmakePlatform -PlatformName $platform
           $extension = if ($platform -eq 'windows') { 'zip' } else { 'tar.gz' }
           $runId = if ($env:GITHUB_RUN_ID) { $env:GITHUB_RUN_ID } else { "local-$PID" }
           $repoName = "baas-xrepo-ci-$runId-$platform-$mode"
           $builtAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
           $commit = if ($env:GITHUB_SHA) { $env:GITHUB_SHA } else { 'local' }
+          $workingDir = Join-Path $outputDir 'xmake-working'
+          $exportsDir = Join-Path $outputDir 'exports'
           $results = New-Object System.Collections.Generic.List[object]
+          $pythonExecutable = (Invoke-LoggedCommand -Capture @('python', '-c', 'import pathlib, sys; print(pathlib.Path(sys.executable).as_posix())')).Trim()
+          $pythonRoot = (Invoke-LoggedCommand -Capture @('python', '-c', 'import pathlib, sys; print(pathlib.Path(sys.base_prefix).as_posix())')).Trim()
+          $pythonInclude = (Invoke-LoggedCommand -Capture @('python', '-c', 'import pathlib, sysconfig; print(pathlib.Path(sysconfig.get_path("include")).as_posix())')).Trim()
 
           try {
             try {
@@ -186,16 +234,85 @@ jobs:
             foreach ($package in (Get-PackageMatrix -PlatformName $platform)) {
               $packageName = [string]$package.Name
               $variant = [string]$package.Variant
-              $configs = [System.Collections.Specialized.OrderedDictionary]$package.Configs
+              $configs = [ordered]@{}
+              foreach ($entry in ([System.Collections.Specialized.OrderedDictionary]$package.Configs).GetEnumerator()) {
+                $configs[$entry.Key] = $entry.Value
+              }
+              if ($packageName -eq 'pybind11-fix') {
+                $configs['python_executable_path'] = $pythonExecutable
+                $configs['python_root_path'] = $pythonRoot
+                $configs['python_include_path'] = $pythonInclude
+              }
               $configString = Get-ConfigString -Configs $configs
-              $repoPackage = "$repoName::$packageName"
+              $repoPackage = "$repoName@$packageName"
+              $projectDir = Join-Path $workingDir "$packageName-$variant"
+              $packageExportDir = Join-Path $exportsDir "$packageName-$variant"
+              $debugLiteral = if ($mode -eq 'debug') { 'true' } else { 'false' }
+              $requireOptions = @('system = false', "debug = $debugLiteral")
+              if ($configs.Count -gt 0) {
+                $requireOptions += "configs = {" + $configString + "}"
+              }
 
-              Invoke-LoggedCommand @('xrepo', 'install', '-y', '-a', $arch, '-m', $mode, '-f', $configString, $repoPackage)
-              $infoJson = Invoke-LoggedCommand -Capture @('xrepo', 'info', '--json', '-a', $arch, '-m', $mode, '-f', $configString, $repoPackage)
-              $info = Resolve-InfoPayload -RawJson $infoJson
+              if (Test-Path -LiteralPath $projectDir) {
+                Remove-Item -LiteralPath $projectDir -Recurse -Force
+              }
+              if (Test-Path -LiteralPath $packageExportDir) {
+                Remove-Item -LiteralPath $packageExportDir -Recurse -Force
+              }
+              New-Item -ItemType Directory -Path $projectDir -Force | Out-Null
 
-              $installDir = [System.IO.Path]::GetFullPath([string]$info.installdir)
-              $version = ([string]$info.version).TrimStart('v')
+              # skip if this package was already built (cache hit from previous run)
+              $markerFile = Join-Path $outputDir ".done-$packageName-$variant"
+              if (Test-Path -LiteralPath $markerFile) {
+                Write-Host "::notice::Skipping $packageName ($variant) - already built in previous run"
+                $cachedManifest = Get-Content -LiteralPath $markerFile -Raw | ConvertFrom-Json
+                $results.Add($cachedManifest) | Out-Null
+                continue
+              }
+
+              $projectFile = @(
+                'add_rules("mode.debug", "mode.release")'
+                "add_requires(`"$repoPackage`", {" + ($requireOptions -join ', ') + "})"
+                'add_requireconfs("**.cmake", {system = true})'
+                'add_requireconfs("**.ninja", {system = true})'
+                'target("dummy")'
+                '    set_kind("phony")'
+              ) -join "`n"
+              Set-Content -LiteralPath (Join-Path $projectDir 'xmake.lua') -Value ($projectFile + "`n") -Encoding utf8
+
+              Push-Location $projectDir
+              try {
+                Invoke-LoggedCommand @('xmake', 'f', '-c', '--require=n', '-p', $xmakePlatform, '-a', $arch, '-m', $mode)
+                Invoke-LoggedCommand @('xmake', 'require', '-y')
+                Invoke-LoggedCommand @('xmake', 'require', '--export', "--packagedir=$packageExportDir")
+              } catch {
+                # collect xmake install failure logs before re-throwing
+                Write-Host "::error::Package $packageName failed, collecting xmake logs..."
+                $xmakeCacheRoot = if ($IsWindows) {
+                  Join-Path $env:LOCALAPPDATA '.xmake/cache/packages'
+                } elseif ($IsMacOS) {
+                  Join-Path $env:HOME '.xmake/cache/packages'
+                } else {
+                  Join-Path $env:HOME '.xmake/cache/packages'
+                }
+                if (Test-Path -LiteralPath $xmakeCacheRoot) {
+                  $logFiles = @(Get-ChildItem -Path $xmakeCacheRoot -Recurse -Filter 'install.txt' -ErrorAction SilentlyContinue)
+                  foreach ($logFile in $logFiles) {
+                    $destName = "$packageName-$variant-" + ($logFile.FullName -replace '[\\\/:]', '_') + ".log"
+                    Copy-Item -LiteralPath $logFile.FullName -Destination (Join-Path $failedLogsDir $destName) -Force
+                    Write-Host "::group::$($logFile.FullName)"
+                    Get-Content -LiteralPath $logFile.FullName -Tail 200
+                    Write-Host "::endgroup::"
+                  }
+                }
+                throw
+              } finally {
+                Pop-Location
+              }
+
+              $exported = Resolve-ExportedInstall -ExportRoot $packageExportDir -PackageName $packageName
+              $installDir = [System.IO.Path]::GetFullPath([string]$exported.InstallDir)
+              $version = [string]$exported.Version
               if ([string]::IsNullOrWhiteSpace($version)) {
                 $version = 'unknown'
               }
@@ -229,6 +346,8 @@ jobs:
 
               $manifestPath = Join-Path $manifestsDir ("{0}.json" -f (Get-ManifestBaseName -AssetName $archiveItem.Name))
               Set-Content -LiteralPath $manifestPath -Value (($manifest | ConvertTo-Json -Depth 10) + "`n") -Encoding utf8
+              # write marker so re-runs skip this package
+              Set-Content -LiteralPath $markerFile -Value (($manifest | ConvertTo-Json -Depth 10) + "`n") -Encoding utf8
               $results.Add([pscustomobject]$manifest) | Out-Null
             }
 
@@ -248,6 +367,14 @@ jobs:
           name: prebuilt-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}
           path: artifacts/*
           if-no-files-found: error
+
+      - name: Upload failed build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-logs-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}
+          path: failed-logs/*
+          if-no-files-found: ignore
 
   release:
     name: publish-release

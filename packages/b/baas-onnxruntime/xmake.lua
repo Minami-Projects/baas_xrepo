@@ -41,10 +41,12 @@ package("baas-onnxruntime")
         -- override xmake injection of ndebug configs
         -- fix C4709 warnings on new msvc toolset versions
         table.insert(configs, "-DCMAKE_BUILD_TYPE=" .. (package:debug() and "Debug" or "Release"))
-        table.insert(configs, "-DCMAKE_C_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 /wd4709 /GR" .. (package:debug() and "-MDd" or "MD"))
-        table.insert(configs, "-DCMAKE_CXX_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 /wd4709 /GR" .. (package:debug() and "-MDd" or "MD"))
-        table.insert(configs, "-DCMAKE_MSVC_RUNTIME_LIBRARY=" .. (package:debug() and "MultiThreadedDebugDLL" or "MultiThreadedDLL"))
-        table.insert(configs, "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW")
+        if package:is_plat("windows") then
+            table.insert(configs, "-DCMAKE_C_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 /wd4709 /GR " .. (package:debug() and "/MDd" or "/MD"))
+            table.insert(configs, "-DCMAKE_CXX_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 /wd4709 /GR " .. (package:debug() and "/MDd" or "/MD"))
+            table.insert(configs, "-DCMAKE_MSVC_RUNTIME_LIBRARY=" .. (package:debug() and "MultiThreadedDebugDLL" or "MultiThreadedDLL"))
+            table.insert(configs, "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW")
+        end
 
         -- fix path too long issues on windows
         table.insert(configs, "-DCMAKE_OBJECT_PATH_MAX=512")
@@ -58,7 +60,7 @@ package("baas-onnxruntime")
                     os.exec("subst B: /D")
                  end
             }
-            os.exec("subst B: " .. package:cachedir() .. "/source")
+            os.exec("subst B: " .. os.curdir())
             os.cd("B:/")
         end
 

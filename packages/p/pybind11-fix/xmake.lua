@@ -41,10 +41,12 @@ package("pybind11-fix")
 
         -- override xmake injection of ndebug configs
         table.insert(configs, "-DCMAKE_BUILD_TYPE=" .. (package:debug() and "Debug" or "Release"))
-        table.insert(configs, "-DCMAKE_C_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 " .. (package:debug() and "-MDd" or "MD"))
-        table.insert(configs, "-DCMAKE_CXX_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 " .. (package:debug() and "-MDd" or "MD"))
-        table.insert(configs, "-DCMAKE_MSVC_RUNTIME_LIBRARY=" .. (package:debug() and "MultiThreadedDebugDLL" or "MultiThreadedDLL"))
-        table.insert(configs, "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW")
+        if package:is_plat("windows") then
+            table.insert(configs, "-DCMAKE_C_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 " .. (package:debug() and "/MDd" or "/MD"))
+            table.insert(configs, "-DCMAKE_CXX_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 " .. (package:debug() and "/MDd" or "/MD"))
+            table.insert(configs, "-DCMAKE_MSVC_RUNTIME_LIBRARY=" .. (package:debug() and "MultiThreadedDebugDLL" or "MultiThreadedDLL"))
+            table.insert(configs, "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW")
+        end
 
         -- force new find_python implement
         table.insert(configs, "-DPYBIND11_FINDPYTHON=ON")

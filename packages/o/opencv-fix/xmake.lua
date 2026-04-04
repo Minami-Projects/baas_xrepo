@@ -151,10 +151,6 @@ package("opencv-fix")
     end
 
     on_install("android", "linux", "macosx", "windows", "mingw@windows,msys", function (package)
-        if _baas_try_install_prebuilt(package) then
-            return
-        end
-
         io.replace("cmake/OpenCVUtils.cmake", "if(PKG_CONFIG_FOUND OR PkgConfig_FOUND)", "if(NOT WIN32 AND (PKG_CONFIG_FOUND OR PkgConfig_FOUND))", {plain = true})
         local configs = {"-DCMAKE_OSX_DEPLOYMENT_TARGET=",
                          "-DBUILD_PERF_TESTS=OFF",
@@ -243,12 +239,13 @@ package("opencv-fix")
             end
         end
 
-        -- override xmake injection of ndebug configs
-        table.insert(configs, "-DCMAKE_BUILD_TYPE=" .. (package:debug() and "Debug" or "Release"))
-        table.insert(configs, "-DCMAKE_C_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 " .. (package:debug() and "-MDd" or "MD"))
-        table.insert(configs, "-DCMAKE_CXX_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 " .. (package:debug() and "-MDd" or "MD"))
-        table.insert(configs, "-DCMAKE_MSVC_RUNTIME_LIBRARY=" .. (package:debug() and "MultiThreadedDebugDLL" or "MultiThreadedDLL"))
-        table.insert(configs, "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW")
+        -- override xmake injection of debug/release flags (MSVC-only flags)
+        if package:is_plat("windows") then
+            table.insert(configs, "-DCMAKE_C_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 " .. (package:debug() and "/MDd" or "/MD"))
+            table.insert(configs, "-DCMAKE_CXX_FLAGS_DEBUG=/Zi /Ob0 /Od /RTC1 " .. (package:debug() and "/MDd" or "/MD"))
+            table.insert(configs, "-DCMAKE_MSVC_RUNTIME_LIBRARY=" .. (package:debug() and "MultiThreadedDebugDLL" or "MultiThreadedDLL"))
+            table.insert(configs, "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW")
+        end
 
         print(configs)
 
