@@ -58,10 +58,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
@@ -71,7 +71,7 @@ jobs:
           xmake-version: latest
 
       - name: Restore build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: artifacts
           key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ github.sha }}
@@ -361,13 +361,13 @@ jobs:
 
       - name: Save build cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: artifacts
           key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ github.sha }}
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prebuilt-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}
           path: artifacts/*
@@ -375,7 +375,7 @@ jobs:
 
       - name: Upload failed build logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: failed-logs-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}
           path: failed-logs/*
@@ -388,15 +388,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release-artifacts
           pattern: prebuilt-*
