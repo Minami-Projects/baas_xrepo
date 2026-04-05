@@ -90,6 +90,8 @@ jobs:
       - name: Set up TensorRT SDK (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $trtDir = Join-Path $env:RUNNER_TEMP 'tensorrt-sdk'
           New-Item -ItemType Directory -Path $trtDir -Force | Out-Null
