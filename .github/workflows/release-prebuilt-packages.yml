@@ -77,14 +77,15 @@ jobs:
           cuda: "12.8.0"
           method: network
           use-github-cache: true
+          sub-packages: '["cudnn"]'
 
-      - name: Set up TensorRT (Linux)
+      - name: Set up cuDNN and TensorRT (Linux)
         if: matrix.platform == 'linux'
         run: |
           wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libnvinfer-dev libnvinfer-plugin-dev libnvonnxparsers-dev
+          sudo apt-get install -y -qq libcudnn9-dev-cuda-12 libnvinfer-dev libnvinfer-plugin-dev libnvonnxparsers-dev
           echo "TENSORRT_ROOT=/usr" >> "$GITHUB_ENV"
 
       - name: Set up TensorRT SDK (Windows)
