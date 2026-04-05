@@ -87,20 +87,18 @@ jobs:
           sudo apt-get install -y -qq libnvinfer-dev libnvinfer-plugin-dev libnvonnxparsers-dev
           echo "TENSORRT_ROOT=/usr" >> "$GITHUB_ENV"
 
-      - name: Set up TensorRT (Windows)
+      - name: Set up TensorRT SDK (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          $trtVersion = "10.9.0.34"
-          $cudaTag = "cuda-12.8"
-          $zipName = "TensorRT-$trtVersion.Windows.win10.$cudaTag.zip"
-          $url = "https://developer.download.nvidia.com/compute/machine-learning/tensorrt/$trtVersion/$zipName"
-          Write-Host "Downloading TensorRT $trtVersion..."
-          Invoke-WebRequest -Uri $url -OutFile $zipName
-          Expand-Archive -Path $zipName -DestinationPath C:\TensorRT
-          $trtRoot = (Get-ChildItem C:\TensorRT -Directory | Select-Object -First 1).FullName
-          Write-Host "TensorRT root: $trtRoot"
-          echo "TENSORRT_ROOT=$trtRoot" >> $env:GITHUB_ENV
+          $trtDir = Join-Path $env:RUNNER_TEMP 'tensorrt-sdk'
+          New-Item -ItemType Directory -Path $trtDir -Force | Out-Null
+          gh release download vendor-sdks --repo Nanboom233/baas_xrepo --pattern 'tensorrt-sdk-*-windows-x64.zip' --dir $trtDir
+          $zip = Get-ChildItem $trtDir -Filter '*.zip' | Select-Object -First 1
+          Expand-Archive -Path $zip.FullName -DestinationPath $trtDir
+          $trtRoot = Get-ChildItem $trtDir -Directory -Filter 'tensorrt-sdk-*' | Select-Object -First 1
+          Write-Host "TensorRT root: $($trtRoot.FullName)"
+          echo "TENSORRT_ROOT=$($trtRoot.FullName)" >> $env:GITHUB_ENV
 
       - name: Restore build cache
         uses: actions/cache/restore@v5
