@@ -121,10 +121,14 @@ jobs:
           echo "TENSORRT_ROOT=$($trtRoot.FullName)" >> $env:GITHUB_ENV
 
       - name: Restore build cache
+        id: cache-restore
         uses: actions/cache/restore@v5
         with:
           path: artifacts
-          key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ hashFiles('packages/**') }}
+          key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ hashFiles('packages/**') }}-${{ github.run_id }}
+          restore-keys: |
+            xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ hashFiles('packages/**') }}-
+            xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-
 
       - name: Build package archives
         shell: pwsh
@@ -341,8 +345,8 @@ jobs:
               Push-Location $projectDir
               try {
                 Invoke-LoggedCommand @('xmake', 'f', '-c', '--require=n', '-p', $xmakePlatform, '-a', $arch, '-m', $mode)
-                Invoke-LoggedCommand @('xmake', 'require', '-y')
-                Invoke-LoggedCommand @('xmake', 'require', '--export', "--packagedir=$packageExportDir")
+                Invoke-LoggedCommand @('xmake', 'require', '-y', '-vD')
+                Invoke-LoggedCommand @('xmake', 'require', '--export', "--packagedir=$packageExportDir", '-vD')
               } catch {
                 # collect xmake install failure logs before re-throwing
                 Write-Host "::error::Package $packageName failed, collecting xmake logs..."
@@ -424,7 +428,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: artifacts
-          key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ hashFiles('packages/**') }}
+          key: xrepo-build-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.mode }}-${{ hashFiles('packages/**') }}-${{ github.run_id }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
