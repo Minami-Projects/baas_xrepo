@@ -77,7 +77,6 @@ jobs:
           cuda: "12.8.0"
           method: network
           use-github-cache: true
-          sub-packages: '["cudnn"]'
 
       - name: Set up cuDNN and TensorRT (Linux)
         if: matrix.platform == 'linux'
@@ -87,6 +86,24 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libcudnn9-dev-cuda-12 libnvinfer-dev libnvinfer-plugin-dev libnvonnxparsers-dev
           echo "TENSORRT_ROOT=/usr" >> "$GITHUB_ENV"
+
+      - name: Set up cuDNN SDK (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $sdkDir = Join-Path $env:RUNNER_TEMP 'cudnn-sdk'
+          New-Item -ItemType Directory -Path $sdkDir -Force | Out-Null
+          gh release download vendor-sdks --repo Nanboom233/baas_xrepo --pattern 'cudnn-sdk-*-windows-x64.zip' --dir $sdkDir
+          $zip = Get-ChildItem $sdkDir -Filter '*.zip' | Select-Object -First 1
+          Expand-Archive -Path $zip.FullName -DestinationPath $sdkDir
+          $cudnnRoot = Get-ChildItem $sdkDir -Directory -Filter 'cudnn-sdk-*' | Select-Object -First 1
+          # Copy into CUDA toolkit so CMake finds cudnn.h alongside cuda.h
+          $cudaPath = $env:CUDA_PATH
+          Copy-Item -Path (Join-Path $cudnnRoot.FullName 'include\*') -Destination (Join-Path $cudaPath 'include') -Force
+          Copy-Item -Path (Join-Path $cudnnRoot.FullName 'lib\x64\*') -Destination (Join-Path $cudaPath 'lib\x64') -Force
+          Write-Host "cuDNN installed into $cudaPath"
 
       - name: Set up TensorRT SDK (Windows)
         if: matrix.platform == 'windows'
