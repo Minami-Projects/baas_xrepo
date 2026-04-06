@@ -27,6 +27,7 @@ jobs:
   build:
     name: build-${{ matrix.platform }}-${{ matrix.mode }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 1440
     strategy:
       fail-fast: true
       matrix:
@@ -78,14 +79,13 @@ jobs:
           method: network
           use-github-cache: true
 
-      - name: Set up cuDNN and TensorRT (Linux)
+      - name: Set up cuDNN (Linux)
         if: matrix.platform == 'linux'
         run: |
           wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libcudnn9-dev-cuda-12 libnvinfer-dev libnvinfer-plugin-dev libnvonnxparsers-dev
-          echo "TENSORRT_ROOT=/usr" >> "$GITHUB_ENV"
+          sudo apt-get install -y -qq libcudnn9-dev-cuda-12
 
       - name: Set up cuDNN SDK (Windows)
         if: matrix.platform == 'windows'
@@ -104,21 +104,6 @@ jobs:
           Copy-Item -Path (Join-Path $cudnnRoot.FullName 'include\*') -Destination (Join-Path $cudaPath 'include') -Force
           Copy-Item -Path (Join-Path $cudnnRoot.FullName 'lib\x64\*') -Destination (Join-Path $cudaPath 'lib\x64') -Force
           Write-Host "cuDNN installed into $cudaPath"
-
-      - name: Set up TensorRT SDK (Windows)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $trtDir = Join-Path $env:RUNNER_TEMP 'tensorrt-sdk'
-          New-Item -ItemType Directory -Path $trtDir -Force | Out-Null
-          gh release download vendor-sdks --repo Nanboom233/baas_xrepo --pattern 'tensorrt-sdk-*-windows-x64.zip' --dir $trtDir
-          $zip = Get-ChildItem $trtDir -Filter '*.zip' | Select-Object -First 1
-          Expand-Archive -Path $zip.FullName -DestinationPath $trtDir
-          $trtRoot = Get-ChildItem $trtDir -Directory -Filter 'tensorrt-sdk-*' | Select-Object -First 1
-          Write-Host "TensorRT root: $($trtRoot.FullName)"
-          echo "TENSORRT_ROOT=$($trtRoot.FullName)" >> $env:GITHUB_ENV
 
       - name: Restore build cache
         id: cache-restore
@@ -197,17 +182,15 @@ jobs:
             if ($PlatformName -eq 'windows') {
               $packages += [pscustomobject]@{ Name = 'directml-bin'; Variant = 'default'; Configs = [ordered]@{} }
               # Windows: single build with all EPs enabled (directml + cuda + tensorrt)
-              $trtRoot = if ($env:TENSORRT_ROOT) { $env:TENSORRT_ROOT } else { '' }
               $packages += [pscustomobject]@{
                 Name = 'baas-onnxruntime'; Variant = 'full'
-                Configs = [ordered]@{ cuda = $true; tensorrt = $true; directml = $true; tensorrt_root = $trtRoot }
+                Configs = [ordered]@{ cuda = $true; tensorrt = $true; directml = $true }
               }
             } elseif ($PlatformName -eq 'linux') {
               # Linux: single build with cuda + tensorrt
-              $trtRoot = if ($env:TENSORRT_ROOT) { $env:TENSORRT_ROOT } else { '/usr' }
               $packages += [pscustomobject]@{
                 Name = 'baas-onnxruntime'; Variant = 'full'
-                Configs = [ordered]@{ cuda = $true; tensorrt = $true; directml = $false; tensorrt_root = $trtRoot }
+                Configs = [ordered]@{ cuda = $true; tensorrt = $true; directml = $false }
               }
             } elseif ($PlatformName -eq 'macos') {
               # TODO: add coreml variant when CoreML EP build is validated
@@ -358,7 +341,7 @@ jobs:
                   Join-Path $env:HOME '.xmake/cache/packages'
                 }
                 if (Test-Path -LiteralPath $xmakeCacheRoot) {
-                  $logFiles = @(Get-ChildItem -Path $xmakeCacheRoot -Recurse -Filter 'install.txt' -ErrorAction SilentlyContinue)
+                  $logFiles = @(Get-ChildItem -Path $xmakeCacheRoot -Recurse -Include '*.log','*.txt' -ErrorAction SilentlyContinue)
                   foreach ($logFile in $logFiles) {
                     $destName = "$packageName-$variant-" + ($logFile.FullName -replace '[\\\/:]', '_') + ".log"
                     Copy-Item -LiteralPath $logFile.FullName -Destination (Join-Path $failedLogsDir $destName) -Force

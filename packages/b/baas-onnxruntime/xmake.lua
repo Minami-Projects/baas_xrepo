@@ -16,7 +16,6 @@ package("baas-onnxruntime")
     -- feature-like options
     add_configs("cuda", {description = "Build with CUDA support", default = false, type = "boolean"})
     add_configs("tensorrt", {description = "Build with TensorRT support", default = false, type = "boolean"})
-    add_configs("tensorrt_root", {description = "TensorRT root path (Required if TensorRT feature is ON)", type = "string"})
     add_configs("directml", {description = "Build with DirectML support", default = false, type = "boolean"})
     add_configs("coreml", {description = "Build with CoreML support", default = false, type = "boolean"})
     add_configs("onnx_shared", {description = "Download onnxruntime shared binaries.", default = true, type = "boolean", readonly = true})
@@ -29,6 +28,9 @@ package("baas-onnxruntime")
         -- TODO: make use of xmake deps so cmake won't download/build them again
         if package:config("cuda") then
             package:add("deps", "cuda", {configs = {utils = {"cudart", "nvrtc"}}})
+        end
+        if package:config("tensorrt") then
+            package:add("deps", "tensorrt-bin")
         end
         if package:is_plat("windows") and package:config("directml") then
             package:add("deps", "directml-bin")
@@ -92,7 +94,7 @@ package("baas-onnxruntime")
         end
         if package:config("tensorrt") then
             table.insert(configs, "-Donnxruntime_USE_TENSORRT=ON")
-            local trt_root = package:config("tensorrt_root")
+            local trt_root = package:dep("tensorrt-bin"):installdir()
             table.insert(configs, "-DTENSORRT_ROOT=" .. trt_root)
             table.insert(configs, "-DCMAKE_PREFIX_PATH=" .. trt_root)
         end
