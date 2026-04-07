@@ -68,6 +68,33 @@ jobs:
           sudo apt-get clean
           df -h /
 
+      - name: Free disk space (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          # Remove preinstalled software we don't need (~30GB+)
+          $toRemove = @(
+            "$env:ANDROID_HOME",                                    # Android SDK (~10GB)
+            'C:\Program Files\dotnet',                              # .NET SDK (~5GB)
+            'C:\Program Files\Eclipse Adoptium',                    # Java JDKs (~3GB)
+            'C:\Program Files\PostgreSQL',                          # PostgreSQL
+            'C:\Program Files\MongoDB',                             # MongoDB
+            'C:\Program Files\MySQL',                               # MySQL
+            'C:\msys64',                                            # MSYS2 (~2GB)
+            'C:\Rust',                                              # Rust toolchain
+            'C:\hostedtoolcache\windows\go',                        # Go versions (~2GB)
+            'C:\hostedtoolcache\windows\Ruby',                      # Ruby versions
+            'C:\hostedtoolcache\windows\node',                      # Node.js versions
+            'C:\hostedtoolcache\windows\PyPy'                       # PyPy versions
+          )
+          foreach ($path in $toRemove) {
+            if (Test-Path $path) {
+              Write-Host "Removing $path ..."
+              Remove-Item -Recurse -Force $path -ErrorAction SilentlyContinue
+            }
+          }
+          Get-PSDrive C | Select-Object Used, Free | Format-Table -AutoSize
+
       - name: Set swap space (Linux)
         if: matrix.platform == 'linux'
         uses: pierotofy/set-swap-space@master
@@ -78,8 +105,8 @@ jobs:
         if: matrix.platform == 'windows'
         uses: al-cheb/configure-pagefile-action@v1.4
         with:
-          minimum-size: 48GB
-          maximum-size: 48GB
+          minimum-size: 8GB
+          maximum-size: 32GB
           disk-root: "C:"
 
       - name: Set up Python
