@@ -125,7 +125,7 @@ jobs:
       - name: Build package archives
         shell: pwsh
         env:
-          CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.platform == 'linux' && '8' || '4' }}
+          CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.platform == 'linux' && '6' || '4' }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
