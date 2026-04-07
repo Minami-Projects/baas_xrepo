@@ -68,14 +68,11 @@ jobs:
           sudo apt-get clean
           df -h /
 
-      - name: Create swap space (Linux)
+      - name: Set swap space (Linux)
         if: matrix.platform == 'linux'
-        run: |
-          sudo fallocate -l 16G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 16
 
       - name: Set up Python
         uses: actions/setup-python@v6
