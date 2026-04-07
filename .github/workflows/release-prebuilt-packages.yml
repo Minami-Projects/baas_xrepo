@@ -72,7 +72,7 @@ jobs:
         if: matrix.platform == 'linux'
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-gb: 16
+          swap-size-gb: 48
 
       - name: Set up Python
         uses: actions/setup-python@v6
