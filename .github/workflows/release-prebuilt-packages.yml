@@ -74,6 +74,14 @@ jobs:
         with:
           swap-size-gb: 48
 
+      - name: Set pagefile size (Windows)
+        if: matrix.platform == 'windows'
+        uses: al-cheb/configure-pagefile-action@v1.4
+        with:
+          minimum-size: 48GB
+          maximum-size: 48GB
+          disk-root: "C:"
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
