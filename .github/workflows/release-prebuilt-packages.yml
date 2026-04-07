@@ -27,7 +27,7 @@ jobs:
   build:
     name: build-${{ matrix.platform }}-${{ matrix.mode }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 360
+    timeout-minutes: 1440
     strategy:
       fail-fast: true
       matrix:
@@ -40,11 +40,11 @@ jobs:
             platform: windows
             arch: x64
             mode: release
-          - runner: ubuntu-latest
+          - runner: blacksmith-4vcpu-ubuntu-2404
             platform: linux
             arch: x86_64
             mode: debug
-          - runner: ubuntu-latest
+          - runner: blacksmith-4vcpu-ubuntu-2404
             platform: linux
             arch: x86_64
             mode: release
