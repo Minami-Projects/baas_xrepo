@@ -94,8 +94,9 @@ package("baas-onnxruntime")
             -- only target consumer GPUs: Pascal(GTX10xx) / Turing(RTX20xx) / Ampere(RTX30xx) / Ada(RTX40xx) / Blackwell(RTX50xx)
             -- datacenter-only archs (sm_60/70/80/90a/120a) are dropped to reduce CUDA compile time
             table.insert(configs, "-DCMAKE_CUDA_ARCHITECTURES=61;75;86;89;100")
-            -- let nvcc use multiple threads per .cu file (CUDA 11.2+)
-            table.insert(configs, "-DCMAKE_CUDA_FLAGS=--threads 4")
+            -- onnxruntime uses its own cache var for nvcc --threads (default 1), not CMAKE_CUDA_FLAGS
+            -- @see cmake/onnxruntime_providers_cuda.cmake: onnxruntime_NVCC_THREADS
+            table.insert(configs, "-Donnxruntime_NVCC_THREADS=4")
         end
         if package:config("tensorrt") then
             table.insert(configs, "-Donnxruntime_USE_TENSORRT=ON")
