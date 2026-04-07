@@ -91,6 +91,11 @@ package("baas-onnxruntime")
         if package:config("cuda") then
             table.insert(configs, "-Donnxruntime_USE_CUDA=ON")
             table.insert(configs, "-Donnxruntime_USE_CUDA_NHWC_OPS=ON")
+            -- only target consumer GPUs: Pascal(GTX10xx) / Turing(RTX20xx) / Ampere(RTX30xx) / Ada(RTX40xx) / Blackwell(RTX50xx)
+            -- datacenter-only archs (sm_60/70/80/90a/120a) are dropped to reduce CUDA compile time
+            table.insert(configs, "-DCMAKE_CUDA_ARCHITECTURES=61;75;86;89;100")
+            -- let nvcc use multiple threads per .cu file (CUDA 11.2+)
+            table.insert(configs, "-DCMAKE_CUDA_FLAGS=--threads 4")
         end
         if package:config("tensorrt") then
             table.insert(configs, "-Donnxruntime_USE_TENSORRT=ON")
