@@ -96,7 +96,7 @@ package("baas-onnxruntime")
             table.insert(configs, "-DCMAKE_CUDA_ARCHITECTURES=61;75;86;89;100")
             -- onnxruntime uses its own cache var for nvcc --threads (default 1), not CMAKE_CUDA_FLAGS
             -- @see cmake/onnxruntime_providers_cuda.cmake: onnxruntime_NVCC_THREADS
-            table.insert(configs, "-Donnxruntime_NVCC_THREADS=4")
+            table.insert(configs, "-Donnxruntime_NVCC_THREADS=2")
         end
         if package:config("tensorrt") then
             table.insert(configs, "-Donnxruntime_USE_TENSORRT=ON")
