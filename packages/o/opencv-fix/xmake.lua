@@ -122,7 +122,7 @@ package("opencv-fix")
         end
         if package:config("ffmpeg") then
             if not package:is_plat("windows") or not package:is_arch("i386", "x86", "arm64") then
-                package:add("deps", "ffmpeg")
+                package:add("deps", "ffmpeg-fix")
             end
         end
         if package:is_plat("linux") then
