@@ -32,11 +32,11 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - runner: windows-latest
+          - runner: blacksmith-4vcpu-windows-2025
             platform: windows
             arch: x64
             mode: debug
-          - runner: windows-latest
+          - runner: blacksmith-4vcpu-windows-2025
             platform: windows
             arch: x64
             mode: release
@@ -430,7 +430,7 @@ jobs:
 
   release:
     name: publish-release
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     needs: build
 
     steps:
