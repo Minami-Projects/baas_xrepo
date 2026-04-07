@@ -32,11 +32,11 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - runner: blacksmith-4vcpu-windows-2025
+          - runner: blacksmith-8vcpu-windows-2025
             platform: windows
             arch: x64
             mode: debug
-          - runner: blacksmith-4vcpu-windows-2025
+          - runner: blacksmith-8vcpu-windows-2025
             platform: windows
             arch: x64
             mode: release
